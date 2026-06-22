@@ -9,3 +9,14 @@ export async function fetchDocuments() {
   if (!res.ok) throw new Error(`documents request failed: ${res.status}`);
   return res.json();
 }
+
+// Sends the raw file bytes; the filename rides in the query string. The backend
+// drops it into the `documents` container, which kicks off the pipeline.
+export async function uploadDocument(file) {
+  const res = await fetch(`${FUNCTION_BASE_URL}/upload?name=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    body: file,
+  });
+  if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+  return res.json();
+}

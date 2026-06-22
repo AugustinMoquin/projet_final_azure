@@ -229,3 +229,34 @@ def list_documents(req: func.HttpRequest) -> func.HttpResponse:
         return _cors_preflight()
     docs = _repo.list_recent(limit=50)
     return func.HttpResponse(json.dumps(docs), mimetype="application/json", headers=_CORS_HEADERS)
+
+
+# ---------------------------------------------------------------------------
+# 6. Upload: the React app POSTs a file here; it lands in the `documents`
+#    container, which fires blob_intake and starts the pipeline.
+#    Body = raw file bytes, filename in the `name` query parameter.
+# ---------------------------------------------------------------------------
+@app.route(route="upload", auth_level=func.AuthLevel.ANONYMOUS, methods=["POST", "OPTIONS"])
+def upload(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return _cors_preflight()
+
+    name = os.path.basename(req.params.get("name", "").strip())
+    data = req.get_body()
+    if not name or not data:
+        return func.HttpResponse(
+            json.dumps({"error": "missing 'name' query parameter or empty body"}),
+            status_code=400, mimetype="application/json", headers=_CORS_HEADERS,
+        )
+
+    from azure.storage.blob import BlobServiceClient
+
+    container = os.environ.get("DOCS_CONTAINER", "documents")
+    client = BlobServiceClient.from_connection_string(os.environ["DOCS_STORAGE_CONNECTION"])
+    client.get_blob_client(container=container, blob=name).upload_blob(data, overwrite=True)
+
+    _log(logging.INFO, f"Uploaded {name} ({len(data)} bytes) to {container}")
+    return func.HttpResponse(
+        json.dumps({"status": "uploaded", "name": name, "sizeBytes": len(data)}),
+        status_code=202, mimetype="application/json", headers=_CORS_HEADERS,
+    )

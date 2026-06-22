@@ -37,6 +37,33 @@ th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color
 .badge.error { background: #fde0e0; color: #b3261e; }
 .errmsg { font-size: 0.75rem; color: #b3261e; margin-top: 0.25rem; }
 
+.uploader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  margin-bottom: 1.5rem;
+}
+.uploader button {
+  background: #2f5fff;
+  color: #fff;
+  border: 0;
+  padding: 0.5rem 1.1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.uploader button:disabled { opacity: 0.6; cursor: default; }
+.msg { font-size: 0.85rem; }
+.msg.ok { color: #0a7d3c; }
+.msg.error { color: #b3261e; }
+
+h2 { font-size: 1.05rem; color: #374151; margin: 0 0 0.6rem; }
+
 .empty { color: #6b7280; }
 footer { margin-top: 1.5rem; color: #9aa0ab; }
 code { background: #eef0f5; padding: 0.1rem 0.35rem; border-radius: 4px; }

@@ -1,4 +1,5 @@
 azure-functions
 azure-cosmos>=4.5
+azure-storage-blob>=12.19
 openai>=1.30
 azure-ai-textanalytics>=5.3
