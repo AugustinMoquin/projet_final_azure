@@ -24,6 +24,7 @@ import uuid
 import azure.functions as func
 
 from cosmos_repo import CosmosRepo
+from extract import extract_text
 from signalr_messages import status_message
 from tagging import tag_document
 
@@ -84,12 +85,9 @@ def blob_intake(blob: func.InputStream, msg: func.Out[str], signalr: func.Out[st
     _log(logging.INFO, f"Blob received: {name} ({blob.length} bytes)",
          document_id=document_id, correlation_id=correlation_id)
 
-    # A small text snippet helps the AI tagger; binary files just use the name.
-    snippet = ""
-    try:
-        snippet = blob.read(4096).decode("utf-8", errors="ignore")
-    except Exception:  # noqa: BLE001 - snippet is best-effort only
-        snippet = ""
+    # Extract real text (PDF parsing / text decode) so the tagger gets content,
+    # not raw binary. Falls back to "" for unsupported binaries.
+    snippet = extract_text(name, blob.read())
 
     doc = {
         "id": document_id,

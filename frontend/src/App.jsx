@@ -31,13 +31,22 @@ export default function App() {
   }
 
   useEffect(() => {
-    fetchDocuments()
-      .then((list) => {
-        const map = {};
-        for (const d of list) map[d.documentId] = d;
-        setDocs(map);
-      })
-      .catch(() => {/* API may be cold; SignalR updates will fill in */});
+    function refresh() {
+      return fetchDocuments()
+        .then((list) => {
+          // Merge so we never overwrite a fresher SignalR update with a slow poll.
+          setDocs((prev) => {
+            const map = { ...prev };
+            for (const d of list) map[d.documentId] = { ...map[d.documentId], ...d };
+            return map;
+          });
+        })
+        .catch(() => {/* API may be cold; SignalR / next poll will fill in */});
+    }
+
+    refresh();
+    // Fallback poll: guarantees the UI converges even if a SignalR push is missed.
+    const poll = setInterval(refresh, 4000);
 
     const conn = new signalR.HubConnectionBuilder()
       .withUrl(FUNCTION_BASE_URL)
@@ -55,7 +64,10 @@ export default function App() {
       .then(() => setConnection("connected"))
       .catch(() => setConnection("disconnected"));
 
-    return () => conn.stop();
+    return () => {
+      clearInterval(poll);
+      conn.stop();
+    };
   }, []);
 
   async function handleUpload(event) {
