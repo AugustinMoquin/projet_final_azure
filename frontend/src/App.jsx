@@ -49,7 +49,10 @@ export default function App() {
     const poll = setInterval(refresh, 4000);
 
     const conn = new signalR.HubConnectionBuilder()
-      .withUrl(FUNCTION_BASE_URL)
+      // withCredentials:false → no cookies sent, so the server's wildcard CORS
+      // (`Access-Control-Allow-Origin: *`) is accepted by the browser. We auth
+      // via the token in the negotiate response, not cookies.
+      .withUrl(FUNCTION_BASE_URL, { withCredentials: false })
       .withAutomaticReconnect()
       .configureLogging(signalR.LogLevel.Warning)
       .build();
