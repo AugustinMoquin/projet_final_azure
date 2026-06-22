@@ -100,16 +100,13 @@ jobs:
         with:
           azcliversion: latest
           inlineScript: |
-            ACR_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
-            # Mirror the public base images into ACR so the build doesn't pull
-            # from Docker Hub (avoids anonymous-pull rate-limit 404s).
-            az acr import --name "$ACR_NAME" --source docker.io/library/node:22-alpine    --image library/node:22-alpine    --force
-            az acr import --name "$ACR_NAME" --source docker.io/library/nginx:1.27-alpine --image library/nginx:1.27-alpine --force
+            # Pull base images from the AWS ECR Public mirror of Docker official
+            # images (anonymous, no Docker Hub rate-limit 404s).
             az acr build \
               --registry "$ACR_NAME" \
               --image "frontend:${IMAGE_TAG}" \
               --image "frontend:latest" \
-              --build-arg BASE_REGISTRY="$ACR_SERVER" \
+              --build-arg BASE_REGISTRY="public.ecr.aws/docker" \
               --build-arg VITE_FUNCTION_BASE_URL="${FUNCTION_BASE_URL}" \
               "${FRONTEND_PATH}"
 
