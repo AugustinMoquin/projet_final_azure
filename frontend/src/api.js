@@ -17,6 +17,10 @@ export async function uploadDocument(file) {
     method: "POST",
     body: file,
   });
-  if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+  if (!res.ok) {
+    // Surface the backend's reason (e.g. unsupported file type) when present.
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.error || `upload failed: ${res.status}`);
+  }
   return res.json();
 }

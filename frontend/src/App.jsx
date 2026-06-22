@@ -100,7 +100,12 @@ export default function App() {
       </header>
 
       <form className="uploader" onSubmit={handleUpload}>
-        <input ref={fileInput} type="file" disabled={uploading} />
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,application/pdf,image/*"
+          disabled={uploading}
+        />
         <button type="submit" disabled={uploading}>
           {uploading ? "Uploading…" : "Upload"}
         </button>

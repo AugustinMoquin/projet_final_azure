@@ -35,6 +35,9 @@ _repo = CosmosRepo()
 
 HUB = os.environ.get("SIGNALR_HUB", "documents")
 
+# Only PDFs and images are accepted for upload.
+ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"}
+
 # The React app is served from a different origin (its own Container App), so the
 # HTTP endpoints it calls must return CORS headers. The SignalR websocket itself
 # goes straight to the SignalR service, which has its own CORS config.
@@ -245,6 +248,16 @@ def upload(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "missing 'name' query parameter or empty body"}),
             status_code=400, mimetype="application/json", headers=_CORS_HEADERS,
+        )
+
+    ext = os.path.splitext(name.lower())[1]
+    if ext not in ALLOWED_EXTENSIONS:
+        return func.HttpResponse(
+            json.dumps({
+                "error": f"unsupported file type '{ext or name}'. Allowed: PDF and images "
+                         f"({', '.join(sorted(ALLOWED_EXTENSIONS))})",
+            }),
+            status_code=415, mimetype="application/json", headers=_CORS_HEADERS,
         )
 
     from azure.storage.blob import BlobServiceClient
