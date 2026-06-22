@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+subscription_id = "a69602e7-c181-47c4-bc35-dca9472149c8"
+project_name    = "projet_final_az"
+location        = "francecentral"
+
+# Azure OpenAI: set to false if your subscription isn't approved yet.
+enable_openai   = true
+openai_location = "swedencentral"
