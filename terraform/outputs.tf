@@ -2,13 +2,34 @@ output "resource_group" {
   value = azurerm_resource_group.main.name
 }
 
-output "function_app_name" {
-  description = "Use this as AZURE_FUNCTION_APP_NAME in the GitHub pipeline."
-  value       = azurerm_linux_function_app.main.name
+# --- Container platform (used by the GitHub Actions pipeline) ---
+output "acr_name" {
+  description = "Use as ACR_NAME in the pipeline."
+  value       = azurerm_container_registry.main.name
 }
 
-output "function_app_default_hostname" {
-  value = "https://${azurerm_linux_function_app.main.default_hostname}"
+output "acr_login_server" {
+  value = azurerm_container_registry.main.login_server
+}
+
+output "backend_app_name" {
+  description = "Use as BACKEND_APP_NAME in the pipeline."
+  value       = azurerm_container_app.backend.name
+}
+
+output "backend_app_fqdn" {
+  description = "Public hostname of the backend API. FUNCTION_BASE_URL = https://<this>/api"
+  value       = azurerm_container_app.backend.ingress[0].fqdn
+}
+
+output "frontend_app_name" {
+  description = "Use as FRONTEND_APP_NAME in the pipeline."
+  value       = azurerm_container_app.frontend.name
+}
+
+output "frontend_app_fqdn" {
+  description = "Public hostname of the React app."
+  value       = azurerm_container_app.frontend.ingress[0].fqdn
 }
 
 output "docs_storage_account" {

@@ -1,0 +1,4 @@
+azure-functions
+azure-cosmos>=4.5
+openai>=1.30
+azure-ai-textanalytics>=5.3

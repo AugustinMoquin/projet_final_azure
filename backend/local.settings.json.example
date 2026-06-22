@@ -1,0 +1,25 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "<func storage connection string>",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+
+    "DOCS_STORAGE_CONNECTION": "<docs storage connection string>",
+    "DOCS_CONTAINER": "documents",
+
+    "SERVICEBUS_CONNECTION": "<service bus connection string>",
+    "SERVICEBUS_QUEUE": "documents-queue",
+
+    "COSMOS_ENDPOINT": "<cosmos endpoint>",
+    "COSMOS_KEY": "<cosmos primary key>",
+    "COSMOS_DATABASE": "documentsdb",
+    "COSMOS_CONTAINER": "documents",
+
+    "AzureSignalRConnectionString": "<signalr connection string>",
+    "SIGNALR_HUB": "documents",
+
+    "AI_PROVIDER": "rules",
+    "OPENAI_ENABLED": "false",
+    "LANGUAGE_ENABLED": "false"
+  }
+}

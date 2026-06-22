@@ -148,25 +148,25 @@ terraform output -raw cosmos_primary_key # sensitive values need -raw
 
 ---
 
-## 6. (Manual) Enable the static website on the docs storage account
+## 6. (Nothing manual) Container hosting is fully Terraformed
 
-Hosting the React build as a static website is a single account-level toggle that
-the AzureRM provider doesn't expose cleanly, so flip it by hand:
+The frontend and backend now run as **containers on Azure Container Apps**, pulled
+from an **Azure Container Registry (ACR)** — all created by Terraform. There is no
+static-website toggle to flip anymore.
+
+Terraform seeds both Container Apps with a placeholder image; the pipeline (step 8)
+builds the real images, pushes them to ACR, and rolls them out. Grab the names and
+URLs you'll need for the GitHub variables:
 
 ```powershell
-$SA = terraform output -raw docs_storage_account   # run inside terraform/
-az storage blob service-properties update `
-  --account-name $SA `
-  --static-website `
-  --index-document index.html `
-  --404-document index.html
-
-# Get the public URL of your frontend:
-az storage account show -n $SA --query "primaryEndpoints.web" -o tsv
+cd terraform
+terraform output acr_name           # -> ACR_NAME
+terraform output resource_group     # -> RESOURCE_GROUP
+terraform output backend_app_name   # -> BACKEND_APP_NAME
+terraform output frontend_app_name  # -> FRONTEND_APP_NAME
+terraform output -raw backend_app_fqdn   # the API host; FUNCTION_BASE_URL = https://<this>/api
+terraform output -raw frontend_app_fqdn  # the public React URL
 ```
-
-That URL is your `FUNCTION_BASE_URL`/frontend address. The pipeline uploads the
-React build into the `$web` container of this same account.
 
 ---
 
@@ -182,35 +182,43 @@ git commit -m "Initial: terraform infra + pipeline"
 gh repo create projet-azure --private --source=. --push   # or create via the UI
 ```
 
-Then add the secrets. Using the `gh` CLI (run from the repo root):
+Then add the **secrets** (auth) and **variables** (non-secret config). Using the
+`gh` CLI from the repo root — note `-chdir` so it works from anywhere:
 
 ```powershell
-gh secret set AZURE_CLIENT_ID        --body "<from step 4>"
-gh secret set AZURE_TENANT_ID        --body "<from step 4>"
-gh secret set AZURE_SUBSCRIPTION_ID  --body "<from step 4>"
-gh secret set AZURE_FUNCTION_APP_NAME --body "$(cd terraform; terraform output -raw function_app_name)"
-gh secret set AZURE_WEB_STORAGE_ACCOUNT --body "$(cd terraform; terraform output -raw docs_storage_account)"
+# Secrets — Azure OIDC login (from step 4)
+gh secret set AZURE_CLIENT_ID        --body "3e13614c-03bc-4ee6-a0d5-f22cbed78412"
+gh secret set AZURE_TENANT_ID        --body "38e72bba-3c22-4382-9323-ac1612931297"
+gh secret set AZURE_SUBSCRIPTION_ID  --body "a69602e7-c181-47c4-bc35-dca9472149c8"
 
-# Non-secret config the frontend build reads:
-gh variable set FUNCTION_BASE_URL --body "https://<function_app_default_hostname>/api"
+# Variables — names/URLs the pipeline targets (from terraform outputs, step 6)
+gh variable set ACR_NAME          --body "$(terraform -chdir=terraform output -raw acr_name)"
+gh variable set RESOURCE_GROUP    --body "$(terraform -chdir=terraform output -raw resource_group)"
+gh variable set BACKEND_APP_NAME  --body "$(terraform -chdir=terraform output -raw backend_app_name)"
+gh variable set FRONTEND_APP_NAME --body "$(terraform -chdir=terraform output -raw frontend_app_name)"
+gh variable set FUNCTION_BASE_URL --body "https://$(terraform -chdir=terraform output -raw backend_app_fqdn)/api"
 ```
 
 Or via the UI: **Repo → Settings → Secrets and variables → Actions**.
 
-| Secret name               | Where it comes from                                  |
-|---------------------------|------------------------------------------------------|
-| `AZURE_CLIENT_ID`         | step 4                                                |
-| `AZURE_TENANT_ID`         | step 4                                                |
-| `AZURE_SUBSCRIPTION_ID`   | step 4                                                |
-| `AZURE_FUNCTION_APP_NAME` | `terraform output -raw function_app_name`             |
-| `AZURE_WEB_STORAGE_ACCOUNT` | `terraform output -raw docs_storage_account`        |
+| Name                  | Kind     | Where it comes from                                   |
+|-----------------------|----------|-------------------------------------------------------|
+| `AZURE_CLIENT_ID`     | secret   | step 4                                                |
+| `AZURE_TENANT_ID`     | secret   | step 4                                                |
+| `AZURE_SUBSCRIPTION_ID` | secret | step 4                                                |
+| `ACR_NAME`            | variable | `terraform output -raw acr_name`                      |
+| `RESOURCE_GROUP`      | variable | `terraform output -raw resource_group`                |
+| `BACKEND_APP_NAME`    | variable | `terraform output -raw backend_app_name`              |
+| `FRONTEND_APP_NAME`   | variable | `terraform output -raw frontend_app_name`             |
+| `FUNCTION_BASE_URL`   | variable | `https://<backend_app_fqdn>/api`                      |
 
 > The grading wants `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`,
-> `AZURE_SUBSCRIPTION_ID`, `AZURE_FUNCTION_APP_NAME` "plus service-specific
-> credentials". We avoid `AZURE_CLIENT_SECRET` by using OIDC (more secure). The
-> Cosmos/Service Bus/SignalR/OpenAI credentials are **not** GitHub secrets — they
-> live as Function App app settings, injected by Terraform (see
-> `terraform/functions.tf`). That's intentional and worth saying in your README.
+> `AZURE_SUBSCRIPTION_ID` "plus service-specific credentials". We avoid
+> `AZURE_CLIENT_SECRET` by using OIDC (more secure), and the pipeline pulls/pushes
+> images via ACR with a managed identity. The Cosmos/Service Bus/SignalR/OpenAI
+> credentials are **not** GitHub secrets — they are injected into the backend
+> Container App as environment variables/secrets by Terraform (see
+> `terraform/containers.tf`). That's intentional and worth saying in your README.
 
 ---
 
@@ -260,13 +268,14 @@ az group delete --name rg-tfstate --yes
 
 ## What Terraform does vs. what you do manually
 
-| Done by Terraform                         | Done manually (this file)                |
-|-------------------------------------------|------------------------------------------|
-| Resource group                            | Install tools, `az login`                |
-| Blob storage + `documents` container      | Request Azure OpenAI access (step 2)     |
-| Service Bus namespace, queue, DLQ config  | Bootstrap tfstate storage (step 3)       |
-| Cosmos DB account / db / container        | Create service principal + OIDC (step 4) |
-| SignalR (serverless)                      | Enable static website toggle (step 6)    |
-| Log Analytics + App Insights              | Set GitHub secrets/variables (step 7)    |
-| Function App + all app settings wired     | Push code, smoke test (8–9)              |
-| Azure OpenAI account + model deployment   |                                          |
+| Done by Terraform                          | Done manually (this file)                |
+|--------------------------------------------|------------------------------------------|
+| Resource group                             | Install tools, `az login`                |
+| Blob storage + `documents` container       | Request Azure OpenAI access (step 2)     |
+| Service Bus namespace, queue, DLQ config   | Bootstrap tfstate storage (step 3)       |
+| Cosmos DB account / db / container         | Create service principal + OIDC (step 4) |
+| SignalR (serverless)                       | Set GitHub secrets/variables (step 7)    |
+| Log Analytics + App Insights               | Push code, smoke test (8–9)              |
+| ACR + Container Apps env + both apps        |                                          |
+| Managed identity + AcrPull, all env wired  |                                          |
+| Azure OpenAI account + model deployment    |                                          |

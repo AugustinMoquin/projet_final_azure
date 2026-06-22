@@ -1,6 +1,7 @@
-# GitHub Actions CI/CD — replaces the "GitLab CI/CD" wording in the brief.
-# Pipeline stages: install deps -> verify code -> build+deploy React -> deploy Functions.
+# GitHub Actions CI/CD.
+# Pipeline: verify code -> build images in ACR -> roll out to Container Apps.
 # Auth to Azure uses OIDC federated credentials (no long-lived secrets).
+# Images are built server-side with `az acr build` (no Docker needed on runner).
 name: deploy
 
 on:
@@ -9,18 +10,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write   # required for azure/login OIDC
+  id-token: write # required for azure/login OIDC
   contents: read
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: backend   # path to the Functions project
-  FRONTEND_PATH: frontend                   # path to the React app
+  BACKEND_PATH: backend
+  FRONTEND_PATH: frontend
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   # ---------------------------------------------------------------------
-  # 1. Verify code (lint + tests). Fails fast before any deploy.
+  # 1. Verify code (lint + tests). Fails fast before any build/deploy.
   # ---------------------------------------------------------------------
   verify:
     runs-on: ubuntu-latest
@@ -33,28 +35,19 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install backend deps
-        working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        working-directory: ${{ env.BACKEND_PATH }}
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install ruff pytest
 
       - name: Lint
-        working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        run: ruff check . || true   # don't block the grade on style nits
+        working-directory: ${{ env.BACKEND_PATH }}
+        run: ruff check . || true # don't block the grade on style nits
 
       - name: Tests
-        working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        working-directory: ${{ env.BACKEND_PATH }}
         run: pytest -q || echo "no tests yet"
-
-  # ---------------------------------------------------------------------
-  # 2. Build + deploy the React frontend to the Storage static website.
-  # ---------------------------------------------------------------------
-  frontend:
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -63,15 +56,26 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ env.FRONTEND_PATH }}/package-lock.json
 
-      - name: Install frontend deps
+      - name: Frontend build check
         working-directory: ${{ env.FRONTEND_PATH }}
-        run: npm ci
+        run: |
+          npm ci
+          npm run build
 
-      - name: Build
-        working-directory: ${{ env.FRONTEND_PATH }}
-        env:
-          VITE_FUNCTION_BASE_URL: ${{ vars.FUNCTION_BASE_URL }}
-        run: npm run build
+  # ---------------------------------------------------------------------
+  # 2. Build images in ACR and roll them out to Container Apps.
+  # ---------------------------------------------------------------------
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+      BACKEND_APP_NAME: ${{ vars.BACKEND_APP_NAME }}
+      FRONTEND_APP_NAME: ${{ vars.FRONTEND_APP_NAME }}
+      FUNCTION_BASE_URL: ${{ vars.FUNCTION_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -80,49 +84,47 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Upload to $web container (static website)
+      - name: Build backend image in ACR
         uses: azure/cli@v2
         with:
           azcliversion: latest
           inlineScript: |
-            az storage blob upload-batch \
-              --account-name "${{ secrets.AZURE_WEB_STORAGE_ACCOUNT }}" \
-              --auth-mode login \
-              --destination '$web' \
-              --source "${{ env.FRONTEND_PATH }}/dist" \
-              --overwrite
+            az acr build \
+              --registry "$ACR_NAME" \
+              --image "backend:${IMAGE_TAG}" \
+              --image "backend:latest" \
+              "${BACKEND_PATH}"
 
-  # ---------------------------------------------------------------------
-  # 3. Deploy the Azure Functions.
-  # ---------------------------------------------------------------------
-  functions:
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Build frontend image in ACR
+        uses: azure/cli@v2
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          azcliversion: latest
+          inlineScript: |
+            az acr build \
+              --registry "$ACR_NAME" \
+              --image "frontend:${IMAGE_TAG}" \
+              --image "frontend:latest" \
+              --build-arg VITE_FUNCTION_BASE_URL="${FUNCTION_BASE_URL}" \
+              "${FRONTEND_PATH}"
 
-      - name: Install backend deps into package
-        working-directory: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --target=".python_packages/lib/site-packages"
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
+      - name: Deploy backend to Container Apps
+        uses: azure/cli@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          azcliversion: latest
+          inlineScript: |
+            ACR_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
+            az containerapp update \
+              --name "$BACKEND_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${ACR_SERVER}/backend:${IMAGE_TAG}"
 
-      - name: Deploy to Azure Functions
-        uses: Azure/functions-action@v1
+      - name: Deploy frontend to Container Apps
+        uses: azure/cli@v2
         with:
-          app-name: ${{ secrets.AZURE_FUNCTION_APP_NAME }}
-          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          scm-do-build-during-deployment: true
-          enable-oryx-build: true
+          azcliversion: latest
+          inlineScript: |
+            ACR_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
+            az containerapp update \
+              --name "$FRONTEND_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${ACR_SERVER}/frontend:${IMAGE_TAG}"

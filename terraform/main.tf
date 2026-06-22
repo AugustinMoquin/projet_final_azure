@@ -20,12 +20,17 @@ locals {
   sb_namespace   = "sb-${local.prefix}-${local.suffix}"
   cosmos_account = "cosmos-${local.prefix}-${local.suffix}"
   signalr_name   = "sigr-${local.prefix}-${local.suffix}"
-  func_app_name  = "func-${local.prefix}-${local.suffix}"
-  plan_name      = "plan-${local.prefix}"
   law_name       = "law-${local.prefix}"
   appi_name      = "appi-${local.prefix}"
   openai_name    = "oai-${local.prefix}-${local.suffix}"
   language_name  = "lang-${local.prefix}-${local.suffix}"
+
+  # Container platform. ACR names allow only alphanumerics (no hyphens).
+  acr_name          = substr("acr${local.prefix}${local.suffix}", 0, 50)
+  aca_env_name      = "cae-${local.prefix}"
+  backend_app_name  = "ca-${local.prefix}-api"
+  frontend_app_name = "ca-${local.prefix}-web"
+  identity_name     = "id-${local.prefix}-aca"
 }
 
 resource "azurerm_resource_group" "main" {
